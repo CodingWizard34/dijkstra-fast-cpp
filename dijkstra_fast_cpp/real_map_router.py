@@ -99,10 +99,29 @@ class RealWorldMapGraph:
                 self.osm_id_to_idx[nid] = len(self.osm_id_to_idx)
                 self.idx_to_osm_id[self.osm_id_to_idx[nid]] = nid
 
+        clean_highway_names = {
+            "unclassified": "Bidholi Connector Road",
+            "tertiary": "Pondha-Bidholi Road",
+            "secondary": "Regional Highway",
+            "primary": "Chakrata Main Road",
+            "trunk": "National Highway",
+            "motorway": "Expressway",
+            "residential": "Local Street",
+            "service": "Access Road",
+            "track": "Hill Track"
+        }
+
         for w in ways:
             wnodes = w.get("nodes", [])
             tags = w.get("tags", {})
-            street_name = tags.get("name", tags.get("ref", tags.get("highway", "Road")))
+            if "name" in tags and tags["name"]:
+                street_name = tags["name"]
+            elif "ref" in tags and tags["ref"]:
+                street_name = f"Route {tags['ref']}"
+            else:
+                hw = tags.get("highway", "road").lower()
+                street_name = clean_highway_names.get(hw, hw.replace("_", " ").title() + " Road")
+
             oneway = tags.get("oneway", "no") in ["yes", "1", "true"]
 
             for k in range(len(wnodes) - 1):
