@@ -238,7 +238,7 @@ with tab_nav:
 
             speedup_val = py_time_ms / max(0.0001, cy_time_ms)
             coords = [real_graph.get_node_coord(nid) for nid in cy_path]
-            directions = real_graph.generate_turn_by_turn(cy_path)
+            directions = real_graph.generate_directions(cy_path)
 
             tour_route = {
                 "id": "tour",
@@ -304,39 +304,70 @@ with tab_nav:
             start_n = p_indices[0]
             dest_n = p_indices[-1]
 
-            # Algorithm-only timing
-            t0 = time.perf_counter()
-            p_dist, p_p, p_reach = dijkstra_python(len(real_graph.osm_id_to_idx), real_graph.edges, start_n, dest_n)
-            live_py_algo_ms = (time.perf_counter() - t0) * 1000.0
+            if trip_type == "Multi-Stop Waypoint Tour":
+                # Algorithm timing covering all stops
+                t0 = time.perf_counter()
+                p_dist, p_p, p_reach = dijkstra_cover_waypoints_python(len(real_graph.osm_id_to_idx), real_graph.edges, tour_node_indices)
+                live_py_algo_ms = (time.perf_counter() - t0) * 1000.0
 
-            if c_graph:
-                t1 = time.perf_counter()
-                c_dist, c_p, c_reach = c_graph.shortest_path(start_n, dest_n)
-                live_cy_algo_ms = (time.perf_counter() - t1) * 1000.0
+                if c_graph:
+                    t1 = time.perf_counter()
+                    c_dist, c_p, c_reach = c_graph.cover_waypoints(tour_node_indices)
+                    live_cy_algo_ms = (time.perf_counter() - t1) * 1000.0
+                else:
+                    c_dist, c_p = p_dist, p_p
+                    live_cy_algo_ms = live_py_algo_ms
+
+                # Workflow timing (snapping + solve + coord reconstruct)
+                t_wf0 = time.perf_counter()
+                wf_nodes_py = [real_graph.find_nearest_node(LANDMARKS[s]) for s in selected_stops]
+                _, wf_p_py, _ = dijkstra_cover_waypoints_python(len(real_graph.osm_id_to_idx), real_graph.edges, wf_nodes_py)
+                _ = [real_graph.get_node_coord(nid) for nid in wf_p_py]
+                py_wf_ms = (time.perf_counter() - t_wf0) * 1000.0
+
+                t_wf1 = time.perf_counter()
+                wf_nodes_cy = [real_graph.find_nearest_node(LANDMARKS[s]) for s in selected_stops]
+                if c_graph:
+                    _, wf_p_cy, _ = c_graph.cover_waypoints(wf_nodes_cy)
+                else:
+                    wf_p_cy = wf_p_py
+                _ = [real_graph.get_node_coord(nid) for nid in wf_p_cy]
+                cy_wf_ms = (time.perf_counter() - t_wf1) * 1000.0
+
             else:
-                c_dist, c_p = p_dist, p_p
-                live_cy_algo_ms = live_py_algo_ms
+                # Direct single-corridor trip
+                t0 = time.perf_counter()
+                p_dist, p_p, p_reach = dijkstra_python(len(real_graph.osm_id_to_idx), real_graph.edges, start_n, dest_n)
+                live_py_algo_ms = (time.perf_counter() - t0) * 1000.0
+
+                if c_graph:
+                    t1 = time.perf_counter()
+                    c_dist, c_p, c_reach = c_graph.shortest_path(start_n, dest_n)
+                    live_cy_algo_ms = (time.perf_counter() - t1) * 1000.0
+                else:
+                    c_dist, c_p = p_dist, p_p
+                    live_cy_algo_ms = live_py_algo_ms
+
+                # Workflow timing
+                t_wf0 = time.perf_counter()
+                s_snapped_py = real_graph.find_nearest_node(LANDMARKS[origin_name])
+                e_snapped_py = real_graph.find_nearest_node(LANDMARKS[dest_name])
+                _, wf_p_py, _ = dijkstra_python(len(real_graph.osm_id_to_idx), real_graph.edges, s_snapped_py, e_snapped_py)
+                _ = [real_graph.get_node_coord(nid) for nid in wf_p_py]
+                py_wf_ms = (time.perf_counter() - t_wf0) * 1000.0
+
+                t_wf1 = time.perf_counter()
+                s_snapped_cy = real_graph.find_nearest_node(LANDMARKS[origin_name])
+                e_snapped_cy = real_graph.find_nearest_node(LANDMARKS[dest_name])
+                if c_graph:
+                    _, wf_p_cy, _ = c_graph.shortest_path(s_snapped_cy, e_snapped_cy)
+                else:
+                    wf_p_cy = wf_p_py
+                _ = [real_graph.get_node_coord(nid) for nid in wf_p_cy]
+                cy_wf_ms = (time.perf_counter() - t_wf1) * 1000.0
 
             live_speedup = live_py_algo_ms / max(0.0001, live_cy_algo_ms)
             live_delta = abs(p_dist - c_dist)
-
-            # Workflow timing (snapping + solve + coord reconstruct)
-            t_wf0 = time.perf_counter()
-            s_snapped_py = real_graph.find_nearest_node(LANDMARKS[origin_name])
-            e_snapped_py = real_graph.find_nearest_node(LANDMARKS[dest_name])
-            _, wf_p_py, _ = dijkstra_python(len(real_graph.osm_id_to_idx), real_graph.edges, s_snapped_py, e_snapped_py)
-            _ = [real_graph.get_node_coord(nid) for nid in wf_p_py]
-            py_wf_ms = (time.perf_counter() - t_wf0) * 1000.0
-
-            t_wf1 = time.perf_counter()
-            s_snapped_cy = real_graph.find_nearest_node(LANDMARKS[origin_name])
-            e_snapped_cy = real_graph.find_nearest_node(LANDMARKS[dest_name])
-            if c_graph:
-                _, wf_p_cy, _ = c_graph.shortest_path(s_snapped_cy, e_snapped_cy)
-            else:
-                wf_p_cy = wf_p_py
-            _ = [real_graph.get_node_coord(nid) for nid in wf_p_cy]
-            cy_wf_ms = (time.perf_counter() - t_wf1) * 1000.0
 
             st.markdown(f"**Cython Speedup:** <span style='color:#38bdf8; font-size:1.3rem; font-weight:700;'>{live_speedup:.2f}x</span>", unsafe_allow_html=True)
 

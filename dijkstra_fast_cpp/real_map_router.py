@@ -231,6 +231,8 @@ class RealWorldMapGraph:
 
         return steps
 
+    generate_turn_by_turn = generate_directions
+
     def discover_all_routes(self, start_idx: int, end_idx: int, fast_g_cpp = None, max_alternatives: int = 6) -> List[Dict[str, Any]]:
         """
         Exhaustively discovers all viable geographical routes and distinct road corridors
