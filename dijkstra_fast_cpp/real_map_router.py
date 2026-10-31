@@ -322,7 +322,7 @@ class RealWorldMapGraph:
             coords = [self.get_node_coord(nid) for nid in path]
 
             delta_km = round(km - base_km, 2)
-            route_name = f"Route {idx + 1}: {'🏆 ' if is_opt else ''}{style['name']}"
+            route_name = f"Route {idx + 1}: {style['name']}"
 
             routes.append({
                 "id": idx + 1,
