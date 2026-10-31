@@ -78,23 +78,14 @@ mode = st.sidebar.radio(
 # MODE 1: REAL-WORLD MAP (UPES TO PREMNAGAR)
 # -------------------------------------------------------------
 if "Real-World" in mode:
-    st.sidebar.header("📍 Trip Locations")
+    st.sidebar.header("📍 Dehradun Route Planner")
 
     landmarks = list(LANDMARKS.keys())
-    origin_name = st.sidebar.selectbox("Start Location", landmarks, index=0) # UPES Bidholi
-    dest_name = st.sidebar.selectbox("Destination", landmarks, index=7)     # Premnagar
-    num_routes_to_find = st.sidebar.slider(
-        "Corridors to Explore",
-        min_value=1,
-        max_value=9,
-        value=5,
-        step=1,
-        help="Discovers all distinct geographical road corridors, bypasses, and mountain routes."
+    
+    trip_type = st.sidebar.radio(
+        "Navigation Type",
+        ["Direct Trip (Multi-Corridor Exploration)", "📍 Multi-Stop Waypoint Tour (e.g. UPES → Kaulagarh → Premnagar → Raipur)"]
     )
-
-    if origin_name == dest_name:
-        st.warning("⚠️ Origin and Destination are identical. Please select different locations.")
-        st.stop()
 
     # Cache graph
     @st.cache_resource
@@ -112,11 +103,91 @@ if "Real-World" in mode:
         st.error("OSM road network could not be loaded. Please check data/dehradun_roads.json.")
         st.stop()
 
-    start_idx = real_graph.find_nearest_node(LANDMARKS[origin_name])
-    end_idx = real_graph.find_nearest_node(LANDMARKS[dest_name])
+    if "Multi-Stop" in trip_type:
+        st.sidebar.markdown("**Select Stops in Visit Order:**")
+        default_stops = [
+            "UPES Bidholi (Campus)",
+            "Kaulagarh (ONGC / FRI Area)",
+            "Premnagar (Market)",
+            "Clock Tower (Ghanta Ghar)",
+            "Raipur Road (Ordnance / Raipur)"
+        ]
+        selected_stops = st.sidebar.multiselect("Planned Stops", landmarks, default=default_stops)
 
-    # Discover all candidate routes
-    routes = real_graph.discover_all_routes(start_idx, end_idx, c_graph, max_alternatives=num_routes_to_find)
+        if len(selected_stops) < 2:
+            st.warning("Please select at least 2 stops for the multi-stop waypoint tour.")
+            st.stop()
+
+        stop_nodes = [real_graph.find_nearest_node(LANDMARKS[s]) for s in selected_stops]
+
+        # Solve via Cython C++ FastGraph
+        t0 = time.perf_counter()
+        if c_graph is not None:
+            total_d, full_path, reach = c_graph.cover_waypoints(stop_nodes)
+        else:
+            total_d, full_path, reach = dijkstra_cover_waypoints_python(len(real_graph.osm_id_to_idx), real_graph.edges, stop_nodes)
+        cy_time = (time.perf_counter() - t0) * 1000.0
+
+        # Pure Python benchmark
+        t1 = time.perf_counter()
+        py_d, py_p, _ = dijkstra_cover_waypoints_python(len(real_graph.osm_id_to_idx), real_graph.edges, stop_nodes)
+        py_time = (time.perf_counter() - t1) * 1000.0
+        speedup_str = f"{max(1.0, py_time / max(0.01, cy_time)):.1f}x"
+
+        if not reach or len(full_path) < 2:
+            st.error("Could not find continuous paths connecting all selected stops.")
+            st.stop()
+
+        tot_km = total_d / 1000.0
+        path_coords = [real_graph.get_node_coord(nid) for nid in full_path]
+        directions = real_graph.generate_directions(full_path)
+        landmarks_passed = real_graph.find_intermediate_landmarks_along_path(full_path)
+
+        # Single tour route dict for visualization
+        routes = [{
+            "id": 1,
+            "name": f"Multi-Stop Tour: {' ➔ '.join([s.split()[0] for s in selected_stops])}",
+            "description": f"Chained Dijkstra trajectory covering {len(selected_stops)} key stops across Dehradun.",
+            "distance_km": round(tot_km, 2),
+            "delta_km": 0.0,
+            "is_optimal": True,
+            "color": "#00E5FF",
+            "dash_array": None,
+            "node_count": len(full_path),
+            "path_indices": full_path,
+            "gps_coordinates": path_coords,
+            "intermediate_landmarks": landmarks_passed,
+            "directions": directions,
+            "python_time_ms": round(py_time, 3),
+            "cython_time_ms": round(cy_time, 3),
+            "speedup": speedup_str
+        }]
+        origin_name = selected_stops[0]
+        dest_name = selected_stops[-1]
+
+    else:
+        origin_name = st.sidebar.selectbox("Start Location", landmarks, index=0)
+        # Default destination: Raipur Road
+        default_dest_idx = landmarks.index("Raipur Road (Ordnance / Raipur)") if "Raipur Road (Ordnance / Raipur)" in landmarks else len(landmarks) - 1
+        dest_name = st.sidebar.selectbox("Destination", landmarks, index=default_dest_idx)
+        num_routes_to_find = st.sidebar.slider(
+            "Corridors to Explore",
+            min_value=1,
+            max_value=9,
+            value=5,
+            step=1,
+            help="Discovers all distinct geographical road corridors, bypasses, and mountain routes."
+        )
+
+        if origin_name == dest_name:
+            st.warning("⚠️ Origin and Destination are identical. Please select different locations.")
+            st.stop()
+
+        start_idx = real_graph.find_nearest_node(LANDMARKS[origin_name])
+        end_idx = real_graph.find_nearest_node(LANDMARKS[dest_name])
+
+        # Discover all candidate routes
+        routes = real_graph.discover_all_routes(start_idx, end_idx, c_graph, max_alternatives=num_routes_to_find)
 
     if not routes:
         st.error("No route found between the selected locations.")
@@ -236,16 +307,33 @@ if "Real-World" in mode:
                 "coords": [[lat, lon] for lat, lon in r["gps_coordinates"]]
             })
 
-        # Landmark checkpoints for pins
-        pins_data = []
+        # Landmark checkpoints for pins (including Origin & Destination)
+        pins_data = [{
+            "name": f"Origin: {origin_name}",
+            "node_id": active_route["path_indices"][0],
+            "lat": start_coord[0],
+            "lon": start_coord[1],
+            "km": 0.0,
+            "type": "start"
+        }]
         for lm in active_route["intermediate_landmarks"]:
-            pins_data.append({
-                "name": lm["name"],
-                "node_id": lm["node_id"],
-                "lat": lm["lat"],
-                "lon": lm["lon"],
-                "km": lm["distance_from_start_km"]
-            })
+            if lm["name"] != origin_name and lm["name"] != dest_name:
+                pins_data.append({
+                    "name": lm["name"],
+                    "node_id": lm["node_id"],
+                    "lat": lm["lat"],
+                    "lon": lm["lon"],
+                    "km": lm["distance_from_start_km"],
+                    "type": "checkpoint"
+                })
+        pins_data.append({
+            "name": f"Destination: {dest_name}",
+            "node_id": active_route["path_indices"][-1],
+            "lat": end_coord[0],
+            "lon": end_coord[1],
+            "km": active_route["distance_km"],
+            "type": "end"
+        })
 
         leaflet_html = f"""
         <!DOCTYPE html>
@@ -290,20 +378,19 @@ if "Real-World" in mode:
                     boundsGroup.addLayer(poly);
                 }});
 
-                // Draw intermediate landmark checkpoint pins
+                // Draw landmark checkpoint pins
                 var pins = {json.dumps(pins_data)};
-                pins.forEach(function(p, i) {{
-                    var isStart = (i === 0);
-                    var isEnd = (i === pins.length - 1);
-                    var pinColor = isStart ? '#00E676' : (isEnd ? '#FF1744' : '#FFD600');
+                pins.forEach(function(p) {{
+                    var pinColor = p.type === 'start' ? '#00E676' : (p.type === 'end' ? '#FF1744' : '#FFD600');
                     var marker = L.circleMarker([p.lat, p.lon], {{
-                        radius: (isStart || isEnd) ? 9 : 6,
+                        radius: (p.type === 'start' || p.type === 'end') ? 8 : 5,
                         fillColor: pinColor,
                         color: '#ffffff',
                         weight: 2,
                         fillOpacity: 1
                     }}).addTo(map);
                     marker.bindPopup("<b>" + p.name + "</b><br>Node ID: <code>#" + p.node_id + "</code><br>Distance from Start: <b>" + p.km + " km</b><br>GPS: " + p.lat + ", " + p.lon);
+                    boundsGroup.addLayer(marker);
                 }});
 
                 map.fitBounds(boundsGroup.getBounds(), {{ padding: [30, 30] }});

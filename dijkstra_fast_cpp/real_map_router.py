@@ -16,14 +16,19 @@ DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "de
 
 # Prominent Dehradun Landmarks with real coordinates (Lat, Lon)
 LANDMARKS = {
-    "UPES Bidholi (Campus)": (30.41761, 77.96827),
-    "UPES Kandoli (Campus)": (30.40420, 77.97340),
-    "Pondha": (30.38050, 77.96320),
-    "Dunga": (30.39510, 77.93920),
-    "Manduwala": (30.39800, 77.92500),
-    "Nanda Ki Chowki": (30.35410, 77.96450),
-    "Suddhowala": (30.34400, 77.95500),
-    "Premnagar (Market)": (30.33522, 77.96400)
+    "UPES Bidholi (Campus)": (30.41792, 77.96829),
+    "UPES Kandoli (Campus)": (30.40356, 77.98084),
+    "Pondha": (30.37890, 77.96640),
+    "Dunga": (30.39500, 77.94000),
+    "Manduwala": (30.37210, 77.94520),
+    "Nanda Ki Chowki": (30.35410, 77.96580),
+    "Suddhowala": (30.34750, 77.96420),
+    "Premnagar (Market)": (30.33539, 77.96395),
+    "Kaulagarh (ONGC / FRI Area)": (30.33950, 78.01250),
+    "Ballupur Chowk": (30.33750, 78.01850),
+    "Clock Tower (Ghanta Ghar)": (30.32440, 78.04180),
+    "Survey Chowk / Parade Ground": (30.32200, 78.05200),
+    "Raipur Road (Ordnance / Raipur)": (30.31250, 78.08900)
 }
 
 
