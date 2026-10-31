@@ -83,6 +83,14 @@ if "Real-World" in mode:
     landmarks = list(LANDMARKS.keys())
     origin_name = st.sidebar.selectbox("Start Location", landmarks, index=0) # UPES Bidholi
     dest_name = st.sidebar.selectbox("Destination", landmarks, index=7)     # Premnagar
+    num_routes_to_find = st.sidebar.slider(
+        "Corridors to Explore",
+        min_value=1,
+        max_value=9,
+        value=5,
+        step=1,
+        help="Discovers all distinct geographical road corridors, bypasses, and mountain routes."
+    )
 
     if origin_name == dest_name:
         st.warning("⚠️ Origin and Destination are identical. Please select different locations.")
@@ -108,7 +116,7 @@ if "Real-World" in mode:
     end_idx = real_graph.find_nearest_node(LANDMARKS[dest_name])
 
     # Discover all candidate routes
-    routes = real_graph.discover_all_routes(start_idx, end_idx, c_graph)
+    routes = real_graph.discover_all_routes(start_idx, end_idx, c_graph, max_alternatives=num_routes_to_find)
 
     if not routes:
         st.error("No route found between the selected locations.")

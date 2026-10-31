@@ -207,66 +207,125 @@ class RealWorldMapGraph:
 
         return steps
 
-    def discover_all_routes(self, start_idx: int, end_idx: int, fast_g_cpp = None, max_alternatives: int = 3) -> List[Dict[str, Any]]:
+    def discover_all_routes(self, start_idx: int, end_idx: int, fast_g_cpp = None, max_alternatives: int = 6) -> List[Dict[str, Any]]:
         """
-        Dynamically discovers all viable distinct routes between any start_idx and end_idx
-        using Dijkstra path penalties, ranks them by distance, and tags intermediate landmarks.
+        Exhaustively discovers all viable geographical routes and distinct road corridors
+        between start_idx and end_idx using iterative edge-penalty Dijkstra and intermediate
+        corridor hub probing, ranks them by distance, and tags intermediate landmarks.
         """
         from .dijkstra_pure import dijkstra_python
 
         n_nodes = len(self.osm_id_to_idx)
         edge_weight_map = {(u, v): w for u, v, w in self.edges}
 
-        routes = []
-        used_path_signatures = set()
+        # 1. Base shortest path query
+        t0 = time.perf_counter()
+        d0, p0, r0 = dijkstra_python(n_nodes, self.edges, start_idx, end_idx)
+        t_py_base = (time.perf_counter() - t0) * 1000.0
 
-        # Styles for visualizing multiple routes on map
-        route_palette = [
-            {"color": "#00E5FF", "dash": None, "name_prefix": "Primary Corridor"},
-            {"color": "#FF9100", "dash": "7, 5", "name_prefix": "Alternative Corridor A"},
-            {"color": "#E040FB", "dash": "4, 4", "name_prefix": "Alternative Corridor B"}
+        if not r0 or len(p0) < 2:
+            return []
+
+        base_dist_m = sum(edge_weight_map.get((p0[i], p0[i + 1]), 0.0) for i in range(len(p0) - 1))
+        base_dist_km = base_dist_m / 1000.0
+
+        raw_candidates = [p0]
+
+        # 2. Penalty-based alternative routing passes
+        current_edges = list(self.edges)
+        penalized_set = set()
+        for _ in range(max_alternatives + 2):
+            last_p = raw_candidates[-1]
+            for i in range(len(last_p) - 1):
+                penalized_set.add((last_p[i], last_p[i + 1]))
+                penalized_set.add((last_p[i + 1], last_p[i]))
+            
+            penalized_edges = []
+            for u, v, w in self.edges:
+                if (u, v) in penalized_set or (v, u) in penalized_set:
+                    penalized_edges.append((u, v, w * 3.5))
+                else:
+                    penalized_edges.append((u, v, w))
+            
+            d_pen, p_pen, r_pen = dijkstra_python(n_nodes, penalized_edges, start_idx, end_idx)
+            if r_pen and len(p_pen) >= 2:
+                raw_candidates.append(p_pen)
+
+        # 3. Intermediate corridor hub probing (covers outer bypasses like Dunga, Manduwala, Kandoli)
+        for name, coord in LANDMARKS.items():
+            hub_idx = self.find_nearest_node(coord)
+            if hub_idx == start_idx or hub_idx == end_idx:
+                continue
+            d1, p1, r1 = dijkstra_python(n_nodes, self.edges, start_idx, hub_idx)
+            d2, p2, r2 = dijkstra_python(n_nodes, self.edges, hub_idx, end_idx)
+            if r1 and r2 and len(p1) >= 2 and len(p2) >= 2:
+                joined = p1[:-1] + p2
+                raw_candidates.append(joined)
+
+        # 4. Filter and retain truly distinct geographical corridors (overlap < 82%)
+        filtered_paths = []
+        for p in raw_candidates:
+            p_dist_m = sum(edge_weight_map.get((p[i], p[i + 1]), 0.0) for i in range(len(p) - 1))
+            p_dist_km = p_dist_m / 1000.0
+            if p_dist_km > base_dist_km * 2.2:
+                continue # Skip excessive detours
+
+            is_dup = False
+            p_set = set(p)
+            for existing_km, existing_p in filtered_paths:
+                shared = len(p_set & set(existing_p))
+                max_len = max(len(p), len(existing_p))
+                if max_len > 0 and (shared / max_len) > 0.82:
+                    is_dup = True
+                    break
+            
+            if not is_dup:
+                filtered_paths.append((p_dist_km, p))
+
+        # Sort all discovered corridors by true ground distance
+        filtered_paths.sort(key=lambda x: x[0])
+        filtered_paths = filtered_paths[:max_alternatives]
+
+        # Route styling palette
+        palette = [
+            {"color": "#00E5FF", "dash": None, "name": "Primary Optimal Corridor"},
+            {"color": "#00E676", "dash": "8, 4", "name": "Secondary Arterial Bypass"},
+            {"color": "#FFD600", "dash": "6, 4", "name": "Pondha Central Corridor"},
+            {"color": "#FF9100", "dash": "7, 5", "name": "Southern Valley Corridor"},
+            {"color": "#FF3D00", "dash": "5, 5", "name": "Western Flank Route"},
+            {"color": "#E040FB", "dash": "4, 4", "name": "Dunga Valley Hill Corridor"},
+            {"color": "#7C4DFF", "dash": "6, 3", "name": "Eastern Kandoli Ridge Route"},
+            {"color": "#00B0FF", "dash": "5, 3", "name": "Upper Dunga Mountain Route"},
+            {"color": "#FF4081", "dash": "7, 3", "name": "Manduwala Outer Bypass"}
         ]
 
-        current_edges = list(self.edges)
-        penalized_edges_set = set()
+        # Benchmark Cython C++ query on primary shortest path
+        cy_ms = 0.0
+        if fast_g_cpp is not None:
+            t1 = time.perf_counter()
+            cy_d, cy_p, _ = fast_g_cpp.shortest_path(start_idx, end_idx)
+            cy_ms = (time.perf_counter() - t1) * 1000.0
 
-        for pass_num in range(max_alternatives):
-            t0 = time.perf_counter()
-            d, path, reach = dijkstra_python(n_nodes, current_edges, start_idx, end_idx)
-            t_py = (time.perf_counter() - t0) * 1000.0
+        routes = []
+        base_km = filtered_paths[0][0] if filtered_paths else 0.0
 
-            if not reach or len(path) < 2:
-                break
-
-            # Calculate true unpenalized ground distance
-            true_dist_m = sum(edge_weight_map.get((path[i], path[i + 1]), 0.0) for i in range(len(path) - 1))
-            true_dist_km = true_dist_m / 1000.0
-
-            # Path signature to prevent duplicate identical paths
-            sig = tuple(path[::max(1, len(path) // 10)])
-            if sig in used_path_signatures:
-                continue
-            used_path_signatures.add(sig)
-
-            # Benchmark Cython C++ query
-            cy_ms = 0.0
-            if fast_g_cpp is not None:
-                t1 = time.perf_counter()
-                cy_d, cy_p, _ = fast_g_cpp.shortest_path(start_idx, end_idx)
-                cy_ms = (time.perf_counter() - t1) * 1000.0
-
-            style = route_palette[len(routes) % len(route_palette)]
+        for idx, (km, path) in enumerate(filtered_paths):
+            style = palette[idx % len(palette)]
+            is_opt = (idx == 0)
             landmarks_on_route = self.find_intermediate_landmarks_along_path(path)
             directions = self.generate_directions(path)
             coords = [self.get_node_coord(nid) for nid in path]
 
+            delta_km = round(km - base_km, 2)
+            route_name = f"Route {idx + 1}: {'🏆 ' if is_opt else ''}{style['name']}"
+
             routes.append({
-                "id": len(routes) + 1,
-                "name": f"Route {len(routes) + 1}: {style['name_prefix']}",
-                "description": f"Explores distinct road segments ({len(path)} nodes).",
-                "distance_km": round(true_dist_km, 2),
-                "delta_km": 0.0,
-                "is_optimal": False,
+                "id": idx + 1,
+                "name": route_name,
+                "description": f"Distinct corridor covering {len(path)} nodes across {km:.2f} km.",
+                "distance_km": round(km, 2),
+                "delta_km": delta_km,
+                "is_optimal": is_opt,
                 "color": style["color"],
                 "dash_array": style["dash"],
                 "node_count": len(path),
@@ -274,33 +333,9 @@ class RealWorldMapGraph:
                 "gps_coordinates": coords,
                 "intermediate_landmarks": landmarks_on_route,
                 "directions": directions,
-                "python_time_ms": round(t_py, 3),
+                "python_time_ms": round(t_py_base, 3),
                 "cython_time_ms": round(max(0.01, cy_ms), 3),
-                "speedup": f"{max(1.0, t_py / max(0.01, cy_ms)):.1f}x"
+                "speedup": f"{max(1.0, t_py_base / max(0.01, cy_ms)):.1f}x"
             })
-
-            # Add penalty to edges of this path to force exploration of alternate roads
-            new_penalized = set((path[i], path[i + 1]) for i in range(len(path) - 1))
-            penalized_edges_set.update(new_penalized)
-
-            current_edges = []
-            for u, v, w in self.edges:
-                if (u, v) in penalized_edges_set or (v, u) in penalized_edges_set:
-                    current_edges.append((u, v, w * 3.5))
-                else:
-                    current_edges.append((u, v, w))
-
-        # Sort all discovered routes by true distance
-        routes.sort(key=lambda r: r["distance_km"])
-        if routes:
-            routes[0]["is_optimal"] = True
-            routes[0]["name"] = "Route 1: Most Optimal Shortest Path"
-            routes[0]["color"] = "#00E5FF"
-            routes[0]["dash_array"] = None
-            base_km = routes[0]["distance_km"]
-            for idx, r in enumerate(routes):
-                r["delta_km"] = round(r["distance_km"] - base_km, 2)
-                if idx > 0:
-                    r["is_optimal"] = False
 
         return routes
