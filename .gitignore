@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.so
+
+# C/C++ build artifacts
+*.o
+*.obj
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Cython intermediate C++ generated files
+dijkstra_fast_cpp/_dijkstra_cython.cpp
+dijkstra_fast_cpp/_dijkstra_cython.html
+
+# IDEs
+.vscode/
+.idea/
+
+# Streamlit
+.streamlit/
