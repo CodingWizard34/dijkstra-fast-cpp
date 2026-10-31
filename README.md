@@ -1,117 +1,185 @@
-# IteroPath: High-Performance C++ Dijkstra Map Routing & Corridor Engine (`dijkstra-fast-cpp`)
+# IteroPath: High-Performance C++ Dijkstra Navigation Engine (`dijkstra-fast-cpp`)
 
-A production-grade implementation of **Dijkstra's Shortest Path Algorithm** comparing pure Python against compiled C++ wrapped with Cython. Includes procedural road network generation, geometric line intersection detection, multi-waypoint path solving, interactive Python frontends (Desktop GUI & Streamlit Web), and JSON path export.
+[![PyPI version](https://img.shields.io/pypi/v/dijkstra-fast-cpp.svg?color=blue)](https://pypi.org/project/dijkstra-fast-cpp/)
+[![Python versions](https://img.shields.io/pypi/pyversions/dijkstra-fast-cpp.svg)](https://pypi.org/project/dijkstra-fast-cpp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
----
-
-## 🚀 Key Features
-
-1. **Dual Solver Engine**:
-   - **Pure Python Baseline**: Uses Python's standard `heapq` module and dynamic lists.
-   - **Compiled C++ Engine (`FastGraph`)**: Implements `std::priority_queue` with cache-coherent adjacency vectors and early-exit destination targeting.
-   - **Speedup**: Up to **~20x–120x faster** on large graph topologies.
-
-2. **Map & Intersection Generation**:
-   - Simulates arterial roads and crossing streets across a 2D map coordinate plane.
-   - Computes exact segment-segment geometric intersections using vector cross-products.
-   - Subdivides roads at each crossing into a connected planar graph of nodes `[x, y]` and weighted edges `(u, v, distance)`.
-   - Generates random waypoints and calculates the optimal route covering all designated points.
-
-3. **JSON Path Export**:
-   - Exports the traversed nodes, geographic/pixel coordinates, edge distances, timing benchmarks, and complete graph metadata into a standardized JSON format.
-
-4. **Dual Interactive Python Frontends**:
-   - **Desktop GUI (`frontend_gui.py`)**: Native Tkinter window with clickable canvas, real-time visual route rendering, performance metrics, and save-file dialog.
-   - **Web Dashboard (`frontend_streamlit.py`)**: Modern browser UI with interactive sliders, Matplotlib dark-mode map plotting, real-time speedup badges, and one-click JSON download.
+A production-grade, high-performance **Dijkstra Navigation Engine** implemented in **native C++** and exposed via **Cython**, providing an empirical performance comparison against pure Python. Includes real OpenStreetMap road routing across Greater Dehradun (19,765 nodes, 37,399 edges), multi-corridor discovery, procedural line-intersection grids, multi-waypoint tours, verifiable numerical parity, and an interactive Streamlit navigation dashboard.
 
 ---
 
-## 📊 Benchmark Results (Intel 12 Threads, Windows 11, Python 3.14)
+## Performance Overview & Verification Dashboard
 
-Measured using `timeit` across multiple sampling passes on random connected graphs:
+IteroPath delivers **28x to 77x faster execution** on real-world arterial road networks and up to **120x+ speedup** on synthetic dense topologies, with **0.000000000 m exact distance parity**.
 
-| Graph Nodes (V) | Graph Edges (E) | Pure Python (ms) | Cython FastGraph C++ (ms) | Speedup Factor |
-|:---------------:|:---------------:|:----------------:|:-------------------------:|:--------------:|
-| **1,000**       | 4,998           | 0.94 ms          | 0.007 ms                  | **127.2x**     |
-| **5,000**       | 24,994          | 13.78 ms         | 0.686 ms                  | **20.1x**      |
-| **20,000**      | 99,994          | 57.57 ms         | 2.064 ms                  | **27.9x**      |
-| **50,000**      | 249,996         | 357.63 ms        | 22.777 ms                 | **15.7x**      |
+![IteroPath Performance Dashboard](results/overall_performance.png)
 
 ---
 
-## 📦 Quick Start & Usage
+## Key Features
 
-### 1. Installation
+- **High-Performance C++ Core (`FastGraph`)**:
+  - Implements cache-coherent contiguous adjacency lists (`std::vector<Edge>`) and a min-heap priority queue (`std::priority_queue`).
+  - Zero-copy graph traversal and instant early exit upon target vertex resolution.
+  - Releases Python's Global Interpreter Lock (`nogil`) for true multi-threaded parallel query execution.
+- **Pure Python Baseline**:
+  - Fully independent pure Python Dijkstra using `heapq` and dynamic dictionaries for transparent, verifiable baseline comparison.
+- **Real-World Road Network Navigation (Dehradun)**:
+  - 19,765 road nodes and 37,399 directed edges extracted from OpenStreetMap.
+  - Multi-corridor route discovery with natural street name synthesis (`Bidholi Connector Road`, `Pondha-Bidholi Road`, `Chakrata Main Road`).
+  - Turn-by-turn navigation instructions with cardinal bearings and segment distances.
+- **Ordered Multi-Stop Waypoint Tours**:
+  - Concatenates shortest path segments across arbitrary ordered waypoints with zero path discontinuity.
+- **Exact Floating-Point Verification**:
+  - Verifies distance agreement between Python and Cython C++ down to machine precision ($\Delta = 0.000000000\text{ m}$).
+- **Interactive Web Interface (Streamlit + Leaflet)**:
+  - Live interactive maps, corridor exploration, real-time speedup meters, downloadable JSON route exports, and built-in benchmark visualization charts.
 
-#### From PyPI:
+---
+
+## Benchmark Results
+
+All benchmarks were executed on an **Intel(R) Core(TM) i5 (12-thread architecture), Windows 11 64-bit, Python 3.14.0, GCC 14.2.0 (`-O3 -march=native -ffast-math`)**.
+
+### 1. Real-World Dehradun Road Network (19,765 Nodes)
+
+Route latency and speedup across major arterial corridors starting from UPES Bidholi Campus:
+
+| Corridor / Route | Stops | Distance (km) | Graph Nodes | Pure Python (ms) | Cython C++ (ms) | Speedup Multiplier | Distance Agreement ($\Delta$) |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **UPES to Pondha** | 2 | 5.58 km | 295 | 7.66 ms | 0.107 ms | **71.6x** | `0.000000000 m` |
+| **UPES to Dunga** | 2 | 10.99 km | 394 | 9.97 ms | 0.148 ms | **67.2x** | `0.000000000 m` |
+| **UPES to Manduwala** | 2 | 13.35 km | 458 | 12.46 ms | 0.207 ms | **60.1x** | `0.000000000 m` |
+| **UPES to Premnagar** | 2 | 11.84 km | 454 | 9.34 ms | 0.135 ms | **69.2x** | `0.000000000 m` |
+| **UPES to Kaulagarh** | 2 | 12.68 km | 590 | 13.14 ms | 0.171 ms | **77.0x** | `0.000000000 m` |
+| **UPES to Clock Tower** | 2 | 15.50 km | 682 | 11.93 ms | 0.402 ms | **29.7x** | `0.000000000 m` |
+| **UPES to Raipur Road** | 2 | 20.87 km | 850 | 18.04 ms | 0.649 ms | **27.8x** | `0.000000000 m` |
+| **Grand Tour (5 Waypoints)** | 5 | 32.71 km | 1,064 | 50.58 ms | 1.082 ms | **46.7x** | `0.000000000 m` |
+
+![Real-World Corridor Comparison](results/route_comparison.png)
+
+---
+
+### 2. Scalability on Increasing Graph Topologies ($V = 1,000$ to $50,000$)
+
+Tested on random intersection graphs with uniform degree $k = 4$:
+
+| Graph Nodes ($V$) | Graph Edges ($E$) | Pure Python (ms) | Cython C++ (ms) | Speedup Multiplier | Cython Throughput (QPS) |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| **1,000** | 4,996 | 1.10 ms | 0.041 ms | **26.8x** | **24,462 queries/s** |
+| **2,500** | 12,494 | 3.70 ms | 0.221 ms | **16.7x** | **4,519 queries/s** |
+| **5,000** | 24,998 | 7.13 ms | 0.300 ms | **23.8x** | **3,334 queries/s** |
+| **10,000** | 49,996 | 21.15 ms | 0.575 ms | **36.8x** | **1,739 queries/s** |
+| **20,000** | 99,996 | 53.94 ms | 2.547 ms | **21.2x** | **393 queries/s** |
+| **35,000** | 174,992 | 131.68 ms | 6.196 ms | **21.3x** | **161 queries/s** |
+| **50,000** | 249,996 | 202.43 ms | 9.049 ms | **22.4x** | **111 queries/s** |
+
+---
+
+### 3. Detailed Performance Charts
+
+#### Execution Latency (Logarithmic Scale)
+![Execution Time](results/execution_time.png)
+
+#### Speedup Multipliers across Topologies & Waypoints
+![Speedup Multipliers](results/speedup.png)
+
+#### Algorithmic Scaling vs Theoretical Complexity $O((V+E)\log V)$
+![Synthetic Scaling](results/synthetic_scaling.png)
+
+---
+
+## Why is IteroPath C++ Faster than Python?
+
+| Factor | Pure Python Dijkstra (`heapq`) | IteroPath Cython C++ (`FastGraph`) |
+|:---|:---|:---|
+| **Memory Allocation** | Dynamic `PyObject` wrappers per edge and node | Flat contiguous `std::vector` buffers |
+| **Heap Operations** | Allocates new `tuple` on every heap push | Zero-allocation `std::priority_queue` in-place push |
+| **Pointer Overhead** | Multiple pointer dereferences via Python heap | Cache-coherent CPU L1/L2 cache hit optimization |
+| **GIL Limitation** | Bound to single Python thread by GIL | Releases GIL (`nogil`) for native multi-threaded scalability |
+| **Numerical Deviation** | IEEE 754 64-bit float | IEEE 754 64-bit `double` (**$\Delta = 0.000000000\text{ m}$**) |
+
+---
+
+## Installation
+
+### From PyPI
 ```bash
 pip install dijkstra-fast-cpp
 ```
 
-#### From Local Source:
+### From Source
 ```bash
-cd dijkstra_router
+git clone https://github.com/CodingWizard34/dijkstra-fast-cpp.git
+cd dijkstra-fast-cpp
 python setup.py build_ext --inplace
-```
-
-### 2. Python API Usage
-
-```python
-from dijkstra_fast_cpp import FastGraph, dijkstra_python, generate_random_map, export_path_to_json
-
-# 1. Generate a procedural road map with intersections
-network = generate_random_map(width=800, height=600, num_roads=12, num_waypoints=4, seed=42)
-
-print(f"Generated {len(network.nodes)} intersections and {len(network.edges)} road edges.")
-
-# 2. Fast C++ Dijkstra Query
-graph = FastGraph(len(network.nodes))
-graph.add_edges_from_list(network.edges)
-
-# Calculate shortest path covering waypoints
-total_dist, path, reachable = graph.cover_waypoints(network.waypoints)
-print(f"Shortest path distance: {total_dist:.2f} px")
-print(f"Path nodes: {path}")
-
-# 3. Export path to JSON
-json_output = export_path_to_json(
-    network_nodes=network.nodes,
-    network_edges=network.edges,
-    path_node_ids=path,
-    total_distance=total_dist,
-    waypoints=network.waypoints,
-    output_filepath="shortest_path.json"
-)
 ```
 
 ---
 
-## 🖥️ Running the Frontends
+## Quickstart & API Usage
 
-### Option A: Desktop GUI (Tkinter)
-```bash
-python frontend_gui.py
+### 1. High-Performance C++ Dijkstra Query
+```python
+from dijkstra_fast_cpp import FastGraph
+
+# Initialize graph with 4 nodes
+graph = FastGraph(4)
+graph.add_edge(0, 1, 4.2)
+graph.add_edge(1, 2, 2.1)
+graph.add_edge(2, 3, 3.5)
+graph.add_edge(0, 2, 8.0)
+
+# Single-pair shortest path
+dist, path, reachable = graph.shortest_path(0, 3)
+print(f"Distance: {dist:.2f} m | Path: {path}")
+# Output: Distance: 9.80 m | Path: [0, 1, 2, 3]
 ```
-*Click anywhere on the map to add custom waypoints, drag sliders, and click "Export Path to JSON".*
 
-### Option B: Streamlit Web Dashboard
+### 2. Multi-Stop Waypoint Tour
+```python
+# Traversal covering waypoints [0 -> 2 -> 3]
+total_dist, tour_path, ok = graph.cover_waypoints([0, 2, 3])
+print(f"Tour Distance: {total_dist:.2f} m | Trajectory: {tour_path}")
+```
+
+### 3. OpenStreetMap Real-World Routing
+```python
+from dijkstra_fast_cpp.real_map_router import RealWorldMapGraph, LANDMARKS
+
+# Load Greater Dehradun road network
+road_graph = RealWorldMapGraph()
+
+# Find nearest network nodes
+start_node = road_graph.find_nearest_node(LANDMARKS["UPES Bidholi (Campus)"])
+end_node = road_graph.find_nearest_node(LANDMARKS["Clock Tower (Ghanta Ghar)"])
+
+# Discover optimal route and alternative corridors
+routes = road_graph.discover_all_routes(start_node, end_node, max_alternatives=3)
+optimal = routes[0]
+print(f"Optimal Corridor: {optimal['name']} ({optimal['distance_km']} km)")
+```
+
+---
+
+## Running the Interactive Web App
+
+Launch the Streamlit navigation interface with interactive Leaflet map and benchmark visualizations:
+
 ```bash
 streamlit run frontend_streamlit.py
 ```
 
 ---
 
-## 🧪 Running Tests & Benchmarks
+## Technical Documentation
 
-```bash
-# Run unit tests
-python -m unittest discover -s tests -v
-
-# Run performance benchmark
-python benchmark.py
-```
+- [Algorithmic Design & Complexity](docs/algorithm.md)
+- [System Architecture & Data Flow](docs/architecture.md)
+- [Verified Benchmark Results](docs/results.md)
 
 ---
 
-## 📄 License
-MIT License.
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
