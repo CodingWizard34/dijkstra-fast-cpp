@@ -1,4 +1,4 @@
-# dijkstra-fast-cpp: High-Performance Dijkstra Map Routing & Intersection Solver
+# IteroPath: High-Performance C++ Dijkstra Map Routing & Corridor Engine (`dijkstra-fast-cpp`)
 
 A production-grade implementation of **Dijkstra's Shortest Path Algorithm** comparing pure Python against compiled C++ wrapped with Cython. Includes procedural road network generation, geometric line intersection detection, multi-waypoint path solving, interactive Python frontends (Desktop GUI & Streamlit Web), and JSON path export.
 

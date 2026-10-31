@@ -26,7 +26,7 @@ except ImportError:
 
 
 st.set_page_config(
-    page_title="Dijkstra Router — C++ vs Python",
+    page_title="IteroPath — C++ Dijkstra Navigation",
     page_icon="🧭",
     layout="wide"
 )
@@ -111,8 +111,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Top Header
-st.title("Dijkstra Navigation Engine")
-st.caption("C++ (Cython) vs Pure Python | Real OpenStreetMap Network & Corridor Analysis")
+st.title("IteroPath")
+st.caption("High-Performance C++ Dijkstra Navigation and Corridor Engine (Cython vs Python)")
 
 # Mode selector
 mode = st.sidebar.radio(
