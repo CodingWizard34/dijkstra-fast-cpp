@@ -504,57 +504,57 @@ with tab_nav:
             <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
             <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
             <style>
-                html, body {{{{ height: 100%; margin: 0; padding: 0; background: #0f1117; }}}}
-                #map {{{{ width: 100%; height: 620px; border-radius: 8px; border: 1px solid #232734; }}}}
-                .leaflet-popup-content-wrapper {{{{ background: #161922; color: #f1f5f9; font-family: sans-serif; border: 1px solid #2d3345; border-radius: 6px; }}}}
-                .leaflet-popup-tip {{{{ background: #161922; }}}}
+                html, body {{ height: 100%; margin: 0; padding: 0; background: #0f1117; }}
+                #map {{ width: 100%; height: 620px; border-radius: 8px; border: 1px solid #232734; }}
+                .leaflet-popup-content-wrapper {{ background: #161922; color: #f1f5f9; font-family: sans-serif; border: 1px solid #2d3345; border-radius: 6px; }}
+                .leaflet-popup-tip {{ background: #161922; }}
             </style>
         </head>
         <body>
             <div id="map"></div>
             <script>
-                var map = L.map('map', {{{{ minZoom: 1, maxZoom: 19 }}}}).setView([20.0, 0.0], 2);
+                var map = L.map('map', {{ minZoom: 1, maxZoom: 19 }}).setView([{center_lat}, {center_lon}], {2 if is_world else 12});
                 
-                L.tileLayer('https://{{{{s}}}}.tile.openstreetmap.org/{{{{z}}}}/{{{{x}}}}/{{{{y}}}}.png', {{{{
+                L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
                     maxZoom: 19,
                     attribution: '© OpenStreetMap contributors'
-                }}}}).addTo(map);
+                }}).addTo(map);
 
                 var allRoutes = {json.dumps(routes_js_data)};
                 var boundsGroup = new L.featureGroup();
 
-                allRoutes.forEach(function(r) {{{{
-                    var polyOptions = {{{{
+                allRoutes.forEach(function(r) {{
+                    var polyOptions = {{
                         color: r.color,
                         weight: r.weight,
                         opacity: r.opacity,
                         lineJoin: 'round'
-                    }}}};
-                    if (r.dash) {{{{
+                    }};
+                    if (r.dash) {{
                         polyOptions.dashArray = r.dash;
-                    }}}}
+                    }}
                     var poly = L.polyline(r.coords, polyOptions).addTo(map);
                     poly.bindPopup("<b>" + r.name + "</b><br>Distance: <b>" + r.distance_km + " km</b><br>" + (r.is_optimal ? "<span style='color:#34d399; font-weight:600;'>Optimal Shortest Path</span>" : "<span style='color:#94a3b8;'>Alternative Corridor</span>"));
                     boundsGroup.addLayer(poly);
-                }}}});
+                }});
 
                 var pins = {json.dumps(pins_data)};
-                pins.forEach(function(p) {{{{
+                pins.forEach(function(p) {{
                     var pinColor = p.type === 'start' ? '#10b981' : (p.type === 'end' ? '#ef4444' : '#f59e0b');
-                    var marker = L.circleMarker([p.lat, p.lon], {{{{
+                    var marker = L.circleMarker([p.lat, p.lon], {{
                         radius: (p.type === 'start' || p.type === 'end') ? 8 : 5,
                         fillColor: pinColor,
                         color: '#ffffff',
                         weight: 2,
                         fillOpacity: 1
-                    }}}}).addTo(map);
+                    }}).addTo(map);
                     marker.bindPopup("<b>" + p.name + "</b><br>Node ID: <code>#" + p.node_id + "</code><br>Distance: <b>" + p.km + " km</b><br>Coordinates: " + p.lat + ", " + p.lon);
                     boundsGroup.addLayer(marker);
-                }}}});
+                }});
 
-                if (boundsGroup.getLayers().length > 0) {{{{
-                    map.fitBounds(boundsGroup.getBounds(), {{{{ padding: [40, 40], maxZoom: 15 }}}});
-                }}}}
+                if (boundsGroup.getLayers().length > 0) {{
+                    map.fitBounds(boundsGroup.getBounds(), {{ padding: [40, 40], maxZoom: 15 }});
+                }}
             </script>
         </body>
         </html>
