@@ -24,7 +24,7 @@ from dijkstra_fast_cpp.dijkstra_pure import dijkstra_python, dijkstra_cover_wayp
 # Fallback regional Dehradun Landmarks
 DEHRADUN_LANDMARKS = {
     "UPES Bidholi (Campus)": (30.41792, 77.96829),
-    "UPES Kandoli (Campus)": (30.40356, 77.98084),
+    "UPES Kandoli (Campus)": (30.40538, 77.96991),
     "Pondha": (30.37890, 77.96640),
     "Dunga": (30.39500, 77.94000),
     "Manduwala": (30.37210, 77.94520),

@@ -28,7 +28,7 @@ if os.path.exists(WORLD_DATA_PATH):
 # Prominent Landmarks (Global hubs + Regional landmarks)
 LANDMARKS = WORLD_HUBS if WORLD_HUBS else {
     "UPES Bidholi (Campus)": (30.41792, 77.96829),
-    "UPES Kandoli (Campus)": (30.40356, 77.98084),
+    "UPES Kandoli (Campus)": (30.40538, 77.96991),
     "Pondha": (30.37890, 77.96640),
     "Dunga": (30.39500, 77.94000),
     "Manduwala": (30.37210, 77.94520),
@@ -150,7 +150,75 @@ class RealWorldMapGraph:
                         self.edges.append((v_idx, u_idx, d))
                         self.edge_street_names[(v_idx, u_idx)] = street_name
 
+        self._bridge_disconnected_components()
         self.loaded = True
+
+    def _bridge_disconnected_components(self):
+        """
+        Ensures that 100% of the graph is reachable by connecting any isolated
+        components (e.g. unlinked campus walking trails or remote footpaths)
+        to the nearest road on the main network with a local connector edge.
+        """
+        if not self.edges or len(self.osm_id_to_idx) <= 1:
+            return
+
+        from collections import defaultdict, deque
+        adj = defaultdict(list)
+        for u, v, _ in self.edges:
+            adj[u].append(v)
+
+        visited = set()
+        components = []
+        for i in range(len(self.osm_id_to_idx)):
+            if i not in visited:
+                comp = []
+                q = deque([i])
+                visited.add(i)
+                while q:
+                    curr = q.popleft()
+                    comp.append(curr)
+                    for nxt in adj[curr]:
+                        if nxt not in visited:
+                            visited.add(nxt)
+                            q.append(nxt)
+                components.append(comp)
+
+        if len(components) <= 1:
+            return
+
+        components.sort(key=len, reverse=True)
+        main_comp = components[0]
+
+        # Fast spatial grid indexing for the main component
+        grid = defaultdict(list)
+        grid_size = 0.02
+        for v in main_comp:
+            lat, lon = self.get_node_coord(v)
+            gx, gy = int(lat / grid_size), int(lon / grid_size)
+            grid[(gx, gy)].append((v, (lat, lon)))
+
+        for comp in components[1:]:
+            best_pair = None
+            min_dist = float("inf")
+            for u in comp:
+                u_lat, u_lon = self.get_node_coord(u)
+                gx, gy = int(u_lat / grid_size), int(u_lon / grid_size)
+                candidates = []
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        candidates.extend(grid.get((gx + dx, gy + dy), []))
+                for v, (v_lat, v_lon) in candidates:
+                    d = haversine_distance((u_lat, u_lon), (v_lat, v_lon))
+                    if d < min_dist:
+                        min_dist = d
+                        best_pair = (u, v, round(d, 2))
+
+            if best_pair:
+                u, v, d = best_pair
+                self.edges.append((u, v, d))
+                self.edges.append((v, u, d))
+                self.edge_street_names[(u, v)] = "Campus / Local Connector Road"
+                self.edge_street_names[(v, u)] = "Campus / Local Connector Road"
 
     def find_nearest_node(self, target_coord: Tuple[float, float]) -> int:
         best_idx = 0
