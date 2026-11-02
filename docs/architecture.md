@@ -4,40 +4,56 @@ This document outlines the software architecture, modular structure, and executi
 
 ---
 
-## 1. System Architecture
+## 1. System Architecture & Activity Flow
 
+### High-Level Activity Flow
 ```mermaid
-graph TD
-    UI["Streamlit Frontend (frontend_streamlit.py)"]
-    CLI["Benchmark CLI (scripts/generate_benchmarks_and_charts.py)"]
-    
-    subgraph IteroPath Core Engine
-        RMR["RealWorldMapGraph (real_map_router.py)"]
-        MPG["Procedural MapGenerator (map_generator.py)"]
-        JSN["JSON / GeoJSON Exporter (json_exporter.py)"]
-        
-        subgraph Solvers
-            PYD["dijkstra_pure.py (Pure Python Baseline)"]
-            CYT["_dijkstra_cython.pyx (Cython C++ Bridge)"]
-            CPP["dijkstra.cpp & dijkstra.h (Native FastGraph Engine)"]
-        end
+flowchart TD
+    classDef fe fill:#131722,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef be fill:#131722,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+    classDef split fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#fbbf24;
+    classDef startNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ffffff;
+
+    Start(["User Selects Origin, Destination & Corridors"]):::startNode
+
+    subgraph FRONTEND ["1. Frontend (Browser Client)"]
+        direction TB
+        Web["Web Interface (HTML5 / DOM)"]:::fe
+        JS["JavaScript Engine (Leaflet.js)"]:::fe
+        Canvas["Browser Map Canvas\n(Interactive Vector Polylines & Markers)"]:::fe
     end
 
-    OSM[("data/dehradun_roads.json (OSM Extract)")]
-    RES[("results/ (PNG Charts & CSV Metrics)")]
+    subgraph BACKEND ["2. Backend (Streamlit / Python Server)"]
+        direction TB
+        Streamlit["Streamlit Reactive Server"]:::be
+        Python["Python Controller Core"]:::be
+        RoutePlan["Route Planning & Point Snapping\n(Haversine Nearest-Node Search)"]:::be
+        
+        subgraph Solvers ["Dual-Core Pathfinding"]
+            PurePy["Pure Python Dijkstra\n(heapq baseline)"]:::split
+            FastCpp["Fast C++ Dijkstra\n(std::priority_queue via Cython)"]:::split
+        end
 
-    OSM --> RMR
-    RMR --> CYT
-    RMR --> PYD
-    CYT --> CPP
+        DataFrame["Dataframing & Verification (Pandas)\n• Latency Benchmarks\n• 0.000000000 m Parity Check\n• GeoJSON Serialization"]:::be
+    end
+
+    %% Flow connections
+    Start --> Web
+    Web -->|UI Action & Event| Streamlit
+    Streamlit --> Python
+    Python --> RoutePlan
+    RoutePlan --> PurePy
+    RoutePlan --> FastCpp
     
-    UI --> RMR
-    UI --> RES
-    CLI --> RMR
-    CLI --> CYT
-    CLI --> PYD
-    CLI --> RES
+    PurePy --> DataFrame
+    FastCpp --> DataFrame
+
+    DataFrame -->|Transmits Latency & Route Payload| Streamlit
+    Streamlit -->|Injected GeoJSON & Polylines| JS
+    JS -->|Renders Path Layers| Canvas
 ```
+
+![System Activity Diagram](../results/architecture_activity_diagram.png)
 
 ---
 
