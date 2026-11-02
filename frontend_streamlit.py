@@ -16,8 +16,27 @@ import streamlit.components.v1 as components
 # Ensure local package path is importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from dijkstra_fast_cpp.real_map_router import RealWorldMapGraph, LANDMARKS, haversine_distance
+from dijkstra_fast_cpp.real_map_router import (
+    RealWorldMapGraph, WORLD_DATA_PATH, DEHRADUN_DATA_PATH, WORLD_HUBS, LANDMARKS, haversine_distance
+)
 from dijkstra_fast_cpp.dijkstra_pure import dijkstra_python, dijkstra_cover_waypoints_python
+
+# Fallback regional Dehradun Landmarks
+DEHRADUN_LANDMARKS = {
+    "UPES Bidholi (Campus)": (30.41792, 77.96829),
+    "UPES Kandoli (Campus)": (30.40356, 77.98084),
+    "Pondha": (30.37890, 77.96640),
+    "Dunga": (30.39500, 77.94000),
+    "Manduwala": (30.37210, 77.94520),
+    "Nanda Ki Chowki": (30.35410, 77.96580),
+    "Suddhowala": (30.34750, 77.96420),
+    "Premnagar (Market)": (30.33539, 77.96395),
+    "Kaulagarh (ONGC / FRI Area)": (30.33950, 78.01250),
+    "Ballupur Chowk": (30.33750, 78.01850),
+    "Clock Tower (Ghanta Ghar)": (30.32440, 78.04180),
+    "Survey Chowk / Parade Ground": (30.32200, 78.05200),
+    "Raipur Road (Ordnance / Raipur)": (30.31250, 78.08900)
+}
 
 try:
     from dijkstra_fast_cpp._dijkstra_cython import dijkstra_cython, FastGraph
@@ -120,25 +139,36 @@ st.caption("High-Performance C++ Dijkstra Navigation & Corridor Engine (Cython v
 
 # Cache graph loading
 @st.cache_resource
-def load_real_graph():
-    g = RealWorldMapGraph()
+def load_real_graph(data_path: str):
+    g = RealWorldMapGraph(data_path)
     fg = None
     if CYTHON_AVAILABLE and g.loaded:
         fg = FastGraph(len(g.osm_id_to_idx))
         fg.add_edges_from_list(g.edges)
     return g, fg
 
-real_graph, c_graph = load_real_graph()
-
-if not real_graph.loaded:
-    st.error("Road network data could not be loaded. Please verify data/dehradun_roads.json.")
-    st.stop()
-
 # =============================================================================
 # SIDEBAR CONFIGURATION
 # =============================================================================
+st.sidebar.subheader("Network Scope")
+scope_options = [
+    "Entire World (Global Network - 113 Hubs)",
+    "Dehradun, India (Local Urban OSM - 19,765 Nodes)"
+]
+scope_choice = st.sidebar.selectbox("Geographic Coverage", scope_options, index=0)
+is_world = "Entire World" in scope_choice
+current_data_path = WORLD_DATA_PATH if is_world else DEHRADUN_DATA_PATH
+
+real_graph, c_graph = load_real_graph(current_data_path)
+
+if not real_graph.loaded:
+    st.error(f"Road network data could not be loaded from {current_data_path}.")
+    st.stop()
+
+active_landmarks = (WORLD_HUBS if WORLD_HUBS else LANDMARKS) if is_world else DEHRADUN_LANDMARKS
+landmarks = list(active_landmarks.keys())
+
 st.sidebar.subheader("Route Configuration")
-landmarks = list(LANDMARKS.keys())
 
 trip_type = st.sidebar.radio(
     "Navigation Type",
@@ -146,36 +176,47 @@ trip_type = st.sidebar.radio(
 )
 
 if trip_type == "Direct Trip (Multi-Corridor)":
-    origin_name = st.sidebar.selectbox("Start Location", landmarks, index=0)
+    if is_world:
+        default_origin = "London (UK)" if "London (UK)" in landmarks else landmarks[0]
+        default_dest = "Paris (France)" if "Paris (France)" in landmarks else (landmarks[1] if len(landmarks) > 1 else landmarks[0])
+    else:
+        default_origin = "UPES Bidholi (Campus)" if "UPES Bidholi (Campus)" in landmarks else landmarks[0]
+        default_dest = "Clock Tower (Ghanta Ghar)" if "Clock Tower (Ghanta Ghar)" in landmarks else (landmarks[1] if len(landmarks) > 1 else landmarks[0])
+
+    origin_idx = landmarks.index(default_origin) if default_origin in landmarks else 0
+    origin_name = st.sidebar.selectbox("Start Location", landmarks, index=origin_idx)
     dest_options = [lm for lm in landmarks if lm != origin_name]
-    default_dest_idx = dest_options.index("Clock Tower (Ghanta Ghar)") if "Clock Tower (Ghanta Ghar)" in dest_options else 0
-    dest_name = st.sidebar.selectbox("Destination", dest_options, index=default_dest_idx)
+    dest_idx = dest_options.index(default_dest) if default_dest in dest_options else 0
+    dest_name = st.sidebar.selectbox("Destination", dest_options, index=dest_idx)
 
     num_routes_to_find = st.sidebar.slider(
         "Corridors to Explore",
         min_value=1,
         max_value=9,
-        value=5,
+        value=3 if is_world else 5,
         help="Discovers the optimal shortest path and diverse alternative corridors"
     )
 
-    start_idx = real_graph.find_nearest_node(LANDMARKS[origin_name])
-    end_idx = real_graph.find_nearest_node(LANDMARKS[dest_name])
+    start_idx = real_graph.find_nearest_node(active_landmarks[origin_name])
+    end_idx = real_graph.find_nearest_node(active_landmarks[dest_name])
     routes = real_graph.discover_all_routes(start_idx, end_idx, c_graph, max_alternatives=num_routes_to_find)
 
 else:
     # Multi-Stop Tour
-    st.sidebar.info("Select 3 to 6 ordered checkpoints across Greater Dehradun.")
+    if is_world:
+        st.sidebar.info("Select 3 to 6 ordered world hubs across continental networks.")
+        default_tour = [s for s in ["London (UK)", "Paris (France)", "Berlin (Germany)", "Vienna (Austria)", "Rome (Italy)"] if s in landmarks]
+    else:
+        st.sidebar.info("Select 3 to 6 ordered checkpoints across Greater Dehradun.")
+        default_tour = [s for s in ["UPES Bidholi (Campus)", "Kaulagarh (ONGC / FRI Area)", "Premnagar (Market)", "Clock Tower (Ghanta Ghar)", "Raipur Road (Ordnance / Raipur)"] if s in landmarks]
+
+    if len(default_tour) < 3:
+        default_tour = landmarks[:min(4, len(landmarks))]
+
     selected_stops = st.sidebar.multiselect(
         "Tour Stops (Ordered)",
         landmarks,
-        default=[
-            "UPES Bidholi (Campus)",
-            "Kaulagarh (ONGC / FRI Area)",
-            "Premnagar (Market)",
-            "Clock Tower (Ghanta Ghar)",
-            "Raipur Road (Ordnance / Raipur)"
-        ]
+        default=default_tour
     )
 
     if len(selected_stops) < 2:
@@ -185,7 +226,7 @@ else:
     origin_name = selected_stops[0]
     dest_name = selected_stops[-1]
 
-    tour_node_indices = [real_graph.find_nearest_node(LANDMARKS[s]) for s in selected_stops]
+    tour_node_indices = [real_graph.find_nearest_node(active_landmarks[s]) for s in selected_stops]
 
     t0 = time.perf_counter()
     py_dist, py_path, py_reach = dijkstra_cover_waypoints_python(
@@ -214,16 +255,16 @@ else:
         "is_optimal": True,
         "color": "#38bdf8",
         "dash_array": None,
-        "description": f"Sequential traversal across {len(selected_stops)} landmarks",
+        "description": f"Sequential traversal across {len(selected_stops)} checkpoints",
         "path_indices": cy_path,
         "gps_coordinates": coords,
         "node_count": len(cy_path),
         "intermediate_landmarks": [
             {
                 "name": s,
-                "node_id": real_graph.find_nearest_node(LANDMARKS[s]),
-                "lat": LANDMARKS[s][0],
-                "lon": LANDMARKS[s][1],
+                "node_id": real_graph.find_nearest_node(active_landmarks[s]),
+                "lat": active_landmarks[s][0],
+                "lon": active_landmarks[s][1],
                 "distance_from_start_km": 0.0
             }
             for s in selected_stops
@@ -289,13 +330,13 @@ with tab_nav:
 
             # Workflow timing
             t_wf0 = time.perf_counter()
-            wf_nodes_py = [real_graph.find_nearest_node(LANDMARKS[s]) for s in selected_stops]
+            wf_nodes_py = [real_graph.find_nearest_node(active_landmarks[s]) for s in selected_stops]
             _, wf_p_py, _ = dijkstra_cover_waypoints_python(len(real_graph.osm_id_to_idx), real_graph.edges, wf_nodes_py)
             _ = [real_graph.get_node_coord(nid) for nid in wf_p_py]
             py_wf_ms = (time.perf_counter() - t_wf0) * 1000.0
 
             t_wf1 = time.perf_counter()
-            wf_nodes_cy = [real_graph.find_nearest_node(LANDMARKS[s]) for s in selected_stops]
+            wf_nodes_cy = [real_graph.find_nearest_node(active_landmarks[s]) for s in selected_stops]
             if c_graph:
                 _, wf_p_cy, _ = c_graph.cover_waypoints(wf_nodes_cy)
             else:
@@ -319,15 +360,15 @@ with tab_nav:
 
             # Workflow timing
             t_wf0 = time.perf_counter()
-            s_snapped_py = real_graph.find_nearest_node(LANDMARKS[origin_name])
-            e_snapped_py = real_graph.find_nearest_node(LANDMARKS[dest_name])
+            s_snapped_py = real_graph.find_nearest_node(active_landmarks[origin_name])
+            e_snapped_py = real_graph.find_nearest_node(active_landmarks[dest_name])
             _, wf_p_py, _ = dijkstra_python(len(real_graph.osm_id_to_idx), real_graph.edges, s_snapped_py, e_snapped_py)
             _ = [real_graph.get_node_coord(nid) for nid in wf_p_py]
             py_wf_ms = (time.perf_counter() - t_wf0) * 1000.0
 
             t_wf1 = time.perf_counter()
-            s_snapped_cy = real_graph.find_nearest_node(LANDMARKS[origin_name])
-            e_snapped_cy = real_graph.find_nearest_node(LANDMARKS[dest_name])
+            s_snapped_cy = real_graph.find_nearest_node(active_landmarks[origin_name])
+            e_snapped_cy = real_graph.find_nearest_node(active_landmarks[dest_name])
             if c_graph:
                 _, wf_p_cy, _ = c_graph.shortest_path(s_snapped_cy, e_snapped_cy)
             else:
@@ -409,8 +450,8 @@ with tab_nav:
         st.subheader("OpenStreetMap Route View")
         st.caption("Cyan: Shortest Path · Dashed Lines: Alternative Corridors")
 
-        start_coord = LANDMARKS[origin_name]
-        end_coord = LANDMARKS[dest_name]
+        start_coord = active_landmarks[origin_name]
+        end_coord = active_landmarks[dest_name]
         center_lat = (start_coord[0] + end_coord[0]) / 2.0
         center_lon = (start_coord[1] + end_coord[1]) / 2.0
 
@@ -463,55 +504,57 @@ with tab_nav:
             <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
             <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
             <style>
-                html, body {{ height: 100%; margin: 0; padding: 0; background: #0f1117; }}
-                #map {{ width: 100%; height: 620px; border-radius: 8px; border: 1px solid #232734; }}
-                .leaflet-popup-content-wrapper {{ background: #161922; color: #f1f5f9; font-family: sans-serif; border: 1px solid #2d3345; border-radius: 6px; }}
-                .leaflet-popup-tip {{ background: #161922; }}
+                html, body {{{{ height: 100%; margin: 0; padding: 0; background: #0f1117; }}}}
+                #map {{{{ width: 100%; height: 620px; border-radius: 8px; border: 1px solid #232734; }}}}
+                .leaflet-popup-content-wrapper {{{{ background: #161922; color: #f1f5f9; font-family: sans-serif; border: 1px solid #2d3345; border-radius: 6px; }}}}
+                .leaflet-popup-tip {{{{ background: #161922; }}}}
             </style>
         </head>
         <body>
             <div id="map"></div>
             <script>
-                var map = L.map('map').setView([{center_lat}, {center_lon}], 12);
+                var map = L.map('map', {{{{ minZoom: 1, maxZoom: 19 }}}}).setView([20.0, 0.0], 2);
                 
-                L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+                L.tileLayer('https://{{{{s}}}}.tile.openstreetmap.org/{{{{z}}}}/{{{{x}}}}/{{{{y}}}}.png', {{{{
                     maxZoom: 19,
                     attribution: '© OpenStreetMap contributors'
-                }}).addTo(map);
+                }}}}).addTo(map);
 
                 var allRoutes = {json.dumps(routes_js_data)};
                 var boundsGroup = new L.featureGroup();
 
-                allRoutes.forEach(function(r) {{
-                    var polyOptions = {{
+                allRoutes.forEach(function(r) {{{{
+                    var polyOptions = {{{{
                         color: r.color,
                         weight: r.weight,
                         opacity: r.opacity,
                         lineJoin: 'round'
-                    }};
-                    if (r.dash) {{
+                    }}}};
+                    if (r.dash) {{{{
                         polyOptions.dashArray = r.dash;
-                    }}
+                    }}}}
                     var poly = L.polyline(r.coords, polyOptions).addTo(map);
                     poly.bindPopup("<b>" + r.name + "</b><br>Distance: <b>" + r.distance_km + " km</b><br>" + (r.is_optimal ? "<span style='color:#34d399; font-weight:600;'>Optimal Shortest Path</span>" : "<span style='color:#94a3b8;'>Alternative Corridor</span>"));
                     boundsGroup.addLayer(poly);
-                }});
+                }}}});
 
                 var pins = {json.dumps(pins_data)};
-                pins.forEach(function(p) {{
+                pins.forEach(function(p) {{{{
                     var pinColor = p.type === 'start' ? '#10b981' : (p.type === 'end' ? '#ef4444' : '#f59e0b');
-                    var marker = L.circleMarker([p.lat, p.lon], {{
+                    var marker = L.circleMarker([p.lat, p.lon], {{{{
                         radius: (p.type === 'start' || p.type === 'end') ? 8 : 5,
                         fillColor: pinColor,
                         color: '#ffffff',
                         weight: 2,
                         fillOpacity: 1
-                    }}).addTo(map);
+                    }}}}).addTo(map);
                     marker.bindPopup("<b>" + p.name + "</b><br>Node ID: <code>#" + p.node_id + "</code><br>Distance: <b>" + p.km + " km</b><br>Coordinates: " + p.lat + ", " + p.lon);
                     boundsGroup.addLayer(marker);
-                }});
+                }}}});
 
-                map.fitBounds(boundsGroup.getBounds(), {{ padding: [35, 35] }});
+                if (boundsGroup.getLayers().length > 0) {{{{
+                    map.fitBounds(boundsGroup.getBounds(), {{{{ padding: [40, 40], maxZoom: 15 }}}});
+                }}}}
             </script>
         </body>
         </html>

@@ -12,10 +12,21 @@ import os
 import time
 from typing import List, Dict, Any, Tuple, Optional
 
-DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "dehradun_roads.json")
+WORLD_DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "world_roads.json")
+DEHRADUN_DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "dehradun_roads.json")
+DATA_PATH = WORLD_DATA_PATH if os.path.exists(WORLD_DATA_PATH) else DEHRADUN_DATA_PATH
 
-# Prominent Dehradun Landmarks with real coordinates (Lat, Lon)
-LANDMARKS = {
+# Load Global Hubs if world_roads.json is present
+WORLD_HUBS: Dict[str, Tuple[float, float]] = {}
+if os.path.exists(WORLD_DATA_PATH):
+    try:
+        with open(WORLD_DATA_PATH, "r", encoding="utf-8") as f:
+            WORLD_HUBS = json.load(f).get("hubs", {})
+    except Exception:
+        WORLD_HUBS = {}
+
+# Prominent Landmarks (Global hubs + Regional landmarks)
+LANDMARKS = WORLD_HUBS if WORLD_HUBS else {
     "UPES Bidholi (Campus)": (30.41792, 77.96829),
     "UPES Kandoli (Campus)": (30.40356, 77.98084),
     "Pondha": (30.37890, 77.96640),
